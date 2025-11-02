@@ -1,26 +1,3 @@
-Exploring the project structure and key files to draft README.md.
-
-
-[6 tools called]
-
-Reviewing additional service configurations and exploring Java files to understand functionality:
-
-
-[6 tools called]
-
-Checking gateway configuration and port details:
-
-
-[2 tools called]
-
-Drafting README.md for the appointment booking project. Checking port configurations for all services:
-
-
-[1 tool called]
-
-Creating README.md:
-
-```markdown:/Users/tejastawde/Documents/Projects/Java/appointment-booking/README.md
 # Appointment Booking System
 
 A microservices-based appointment booking system for salons, built with Spring Boot and Spring Cloud. This system enables customers to book appointments at salons, manage services, and process payments.
@@ -90,7 +67,6 @@ Before running the application, ensure you have the following installed:
 ```bash
 git clone <repository-url>
 cd appointment-booking
-```
 
 ### 2. Build the Project
 
