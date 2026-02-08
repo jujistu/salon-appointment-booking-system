@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ .Values.service.name }}
+  labels:
+    app: {{ .Values.service.name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: {{ .Values.service.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.service.name }}
+    spec:
+      containers:
+      - name: {{ .Values.service.name }}
+        image: "{{ .Values.image.repository }}-{{ .Values.service.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.service.targetPort }}
+          protocol: TCP
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 10 }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        env:
+          {{- toYaml .Values.env | nindent 10 }}
+  {{- if eq .Values.strategy.type "canary" }}
+  strategy:
+    canary:
+      canaryService: {{ .Values.service.name }}-canary
+      stableService: {{ .Values.service.name }}-stable
+      trafficRouting:
+        nginx:
+          stableIngress: {{ .Values.service.name }}
+      steps:
+        {{- toYaml .Values.canary.steps | nindent 8 }}
+      {{- if .Values.canary.analysis.enabled }}
+      analysis:
+        templates:
+        - templateName: {{ .Values.service.name }}-analysis
+        startingStep: 1
+      {{- end }}
+  {{- else if eq .Values.strategy.type "blueGreen" }}
+  strategy:
+    blueGreen:
+      activeService: {{ .Values.service.name }}
+      previewService: {{ .Values.service.name }}-preview
+      autoPromotionEnabled: {{ .Values.blueGreen.autoPromotionEnabled }}
+      scaleDownDelaySeconds: {{ .Values.blueGreen.scaleDownDelaySeconds }}
+  {{- end }}

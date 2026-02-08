@@ -1,0 +1,57 @@
+name: Platform Components
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm/platform/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-platform:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-prod-cluster --region us-east-1
+      
+      - name: Add Helm Repos
+        run: |
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+      
+      - name: Deploy Ingress NGINX
+        run: |
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --values helm/platform/ingress-nginx/values.yaml \
+            --wait
+      
+      - name: Deploy Cert Manager
+        run: |
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --create-namespace \
+            --set installCRDs=true \
+            --values helm/platform/cert-manager/values.yaml \
+            --wait
+      
+      - name: Deploy Redis
+        run: |
+          helm upgrade --install redis bitnami/redis \
+            --namespace redis \
+            --create-namespace \
+            --values helm/platform/redis/values.yaml \
+            --wait

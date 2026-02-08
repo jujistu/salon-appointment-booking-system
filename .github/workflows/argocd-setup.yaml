@@ -1,0 +1,41 @@
+name: ArgoCD Setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install-argocd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-prod-cluster --region us-east-1
+      
+      - name: Install ArgoCD
+        run: |
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      
+      - name: Install Argo Rollouts
+        run: |
+          kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+      
+      - name: Apply ArgoCD Configuration
+        run: |
+          kubectl apply -f argocd/projects/
+          kubectl apply -f argocd/applications/
+      
+      - name: Get ArgoCD Password
+        run: |
+          echo "ArgoCD Admin Password:"
+          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+          echo ""

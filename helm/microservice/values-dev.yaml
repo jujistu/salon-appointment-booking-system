@@ -1,0 +1,29 @@
+replicaCount: 1
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  hosts:
+    - host: dev-api.salon.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: salon-dev-tls
+      hosts:
+        - dev-api.salon.example.com
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "dev"
+  - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+    value: "http://eureka-server:8070/eureka/"

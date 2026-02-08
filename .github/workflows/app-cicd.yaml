@@ -1,0 +1,207 @@
+name: Microservices CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '*-service/**'
+      - 'eureka-server/**'
+      - 'gateway-server/**'
+  pull_request:
+    branches: [main, develop]
+
+env:
+  REGISTRY: docker.io
+  REGISTRY_USERNAME: tejastawde28
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            eureka-server:
+              - 'eureka-server/**'
+            gateway-server:
+              - 'gateway-server/**'
+            user-service:
+              - 'user-service/**'
+            salon-service:
+              - 'salon-service/**'
+            category-service:
+              - 'category-service/**'
+            offering-service:
+              - 'offering-service/**'
+            booking-service:
+              - 'booking-service/**'
+            payment-service:
+              - 'payment-service/**'
+
+  security-scan:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: SAST - Dependency Check
+        run: |
+          cd ${{ matrix.service }}
+          mvn org.owasp.dependency-check:dependency-check-maven:check
+      
+      - name: SAST - SpotBugs
+        run: |
+          cd ${{ matrix.service }}
+          mvn compile spotbugs:check
+      
+      - name: Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ${{ matrix.service }}
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+  build-test:
+    needs: [detect-changes, security-scan]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Build and Test
+        run: |
+          cd ${{ matrix.service }}
+          mvn clean verify
+      
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ${{ matrix.service }}/target/site/jacoco/jacoco.xml
+
+  build-push-image:
+    needs: build-test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Build Image with Jib
+        run: |
+          cd ${{ matrix.service }}
+          mvn compile jib:build \
+            -Djib.to.auth.username=${{ secrets.DOCKER_USERNAME }} \
+            -Djib.to.auth.password=${{ secrets.DOCKER_PASSWORD }} \
+            -Djib.to.tags=${{ github.sha }},latest
+      
+      - name: Image Scan - Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.REGISTRY_USERNAME }}/salon-${{ matrix.service }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  deploy-dev:
+    needs: build-push-image
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: development
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-dev-cluster --region us-east-1
+      
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install ${{ matrix.service }} ./helm/microservice \
+            --namespace dev \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --set service.name=${{ matrix.service }} \
+            --values ./helm/microservice/values-dev.yaml \
+            --wait
+
+  deploy-prod:
+    needs: build-push-image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-prod-cluster --region us-east-1
+      
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install ${{ matrix.service }} ./helm/microservice \
+            --namespace prod \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --set service.name=${{ matrix.service }} \
+            --values ./helm/microservice/values-prod.yaml \
+            --wait
+      
+      - name: Run Smoke Tests
+        run: |
+          kubectl wait --for=condition=ready pod -l app=${{ matrix.service }} -n prod --timeout=300s
+          kubectl run smoke-test --rm -i --restart=Never --image=curlimages/curl -- \
+            curl -f http://${{ matrix.service }}.prod.svc.cluster.local/actuator/health

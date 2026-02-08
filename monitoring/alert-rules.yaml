@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: salon-alerts
+  namespace: monitoring
+spec:
+  groups:
+  - name: microservices
+    interval: 30s
+    rules:
+    - alert: HighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{namespace=~"dev|prod"}[5m]) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage detected"
+        description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has high CPU usage"
+
+    - alert: HighMemoryUsage
+      expr: container_memory_usage_bytes{namespace=~"dev|prod"} / container_spec_memory_limit_bytes{namespace=~"dev|prod"} > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage detected"
+        description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has high memory usage"
+
+    - alert: PodCrashLooping
+      expr: rate(kube_pod_container_status_restarts_total{namespace=~"dev|prod"}[15m]) > 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Pod is crash looping"
+        description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is crash looping"
+
+    - alert: ServiceDown
+      expr: up{job=~".*service.*"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Service is down"
+        description: "Service {{ $labels.job }} is down"
+
+    - alert: HighErrorRate
+      expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate detected"
+        description: "Service {{ $labels.service }} has high error rate"
+
+    - alert: SlowResponseTime
+      expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Slow response time detected"
+        description: "Service {{ $labels.service }} has slow response time"

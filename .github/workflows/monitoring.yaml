@@ -1,0 +1,42 @@
+name: Monitoring Stack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "monitoring/**"
+  workflow_dispatch:
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    # environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-prod-cluster --region us-east-1
+
+      - name: Add Helm Repos
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+
+      - name: Deploy Prometheus Stack
+        run: |
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --create-namespace \
+            --values monitoring/prometheus-values.yaml \
+            --wait
+
+      - name: Apply Alert Rules
+        run: kubectl apply -f monitoring/alert-rules.yaml -n monitoring

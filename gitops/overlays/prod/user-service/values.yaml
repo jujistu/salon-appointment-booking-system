@@ -1,0 +1,32 @@
+service:
+  name: user-service
+
+image:
+  tag: "latest"
+
+strategy:
+  type: canary
+
+canary:
+  enabled: true
+  steps:
+    - setWeight: 20
+    - pause: {duration: 2m}
+    - setWeight: 50
+    - pause: {duration: 2m}
+    - setWeight: 80
+    - pause: {duration: 2m}
+  analysis:
+    enabled: true
+    successRate: 95
+    errorRate: 5
+
+replicaCount: 3
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi

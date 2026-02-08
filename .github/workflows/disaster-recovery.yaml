@@ -1,0 +1,68 @@
+name: Disaster Recovery
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-prod-cluster --region us-east-1
+      
+      - name: Install Velero CLI
+        run: |
+          wget https://github.com/vmware-tanzu/velero/releases/download/v1.12.0/velero-v1.12.0-linux-amd64.tar.gz
+          tar -xvf velero-v1.12.0-linux-amd64.tar.gz
+          sudo mv velero-v1.12.0-linux-amd64/velero /usr/local/bin/
+      
+      - name: Create Backup
+        run: |
+          velero backup create salon-backup-$(date +%Y%m%d-%H%M%S) \
+            --include-namespaces prod,dev \
+            --wait
+      
+      - name: Verify Backup
+        run: velero backup get
+      
+      - name: Cleanup Old Backups
+        run: |
+          velero backup delete --confirm $(velero backup get -o json | jq -r '.items[] | select(.status.phase == "Completed") | select(.metadata.creationTimestamp < (now - 604800 | todate)) | .metadata.name')
+
+  test-restore:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name salon-prod-cluster --region us-east-1
+      
+      - name: List Available Backups
+        run: velero backup get
+      
+      - name: Restore Instructions
+        run: |
+          echo "To restore from backup, run:"
+          echo "velero restore create --from-backup <backup-name>"
+          echo ""
+          echo "To restore specific namespace:"
+          echo "velero restore create --from-backup <backup-name> --include-namespaces prod"

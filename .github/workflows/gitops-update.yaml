@@ -1,0 +1,35 @@
+name: GitOps Update
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+
+jobs:
+  update-gitops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update Image Tag
+        run: |
+          sed -i "s|tag:.*|tag: \"${{ inputs.image_tag }}\"|g" \
+            gitops/overlays/${{ inputs.environment }}/${{ inputs.service }}/values.yaml
+      
+      - name: Commit and Push
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add gitops/overlays/${{ inputs.environment }}/${{ inputs.service }}/values.yaml
+          git commit -m "Update ${{ inputs.service }} to ${{ inputs.image_tag }} in ${{ inputs.environment }}"
+          git push

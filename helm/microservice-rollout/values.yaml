@@ -1,0 +1,77 @@
+replicaCount: 3
+
+image:
+  repository: tejastawde28/salon
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  name: microservice
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+strategy:
+  type: canary  # canary or blueGreen
+
+canary:
+  enabled: true
+  steps:
+    - setWeight: 20
+    - pause: {duration: 2m}
+    - setWeight: 40
+    - pause: {duration: 2m}
+    - setWeight: 60
+    - pause: {duration: 2m}
+    - setWeight: 80
+    - pause: {duration: 2m}
+  analysis:
+    enabled: true
+    successRate: 95
+    errorRate: 5
+
+blueGreen:
+  enabled: false
+  autoPromotionEnabled: false
+  scaleDownDelaySeconds: 300
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 60
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 5
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "prod"
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.salon.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: salon-tls
+      hosts:
+        - api.salon.example.com

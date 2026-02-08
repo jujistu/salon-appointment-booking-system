@@ -1,0 +1,10 @@
+aws_region         = "us-east-1"
+environment        = "prod"
+cluster_name       = "salon-prod-cluster"
+cluster_version    = "1.28"
+vpc_cidr           = "10.1.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+node_instance_types = ["t3.xlarge"]
+node_desired_size  = 3
+node_min_size      = 3
+node_max_size      = 10

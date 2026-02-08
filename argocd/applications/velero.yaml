@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velero
+  namespace: velero
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/velero-role
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: velero
+  namespace: velero
+spec:
+  repo: https://vmware-tanzu.github.io/helm-charts
+  chart: velero
+  targetNamespace: velero
+  valuesContent: |-
+    configuration:
+      provider: aws
+      backupStorageLocation:
+        bucket: salon-velero-backups
+        config:
+          region: us-east-1
+      volumeSnapshotLocation:
+        config:
+          region: us-east-1
+    serviceAccount:
+      server:
+        create: false
+        name: velero
+    initContainers:
+      - name: velero-plugin-for-aws
+        image: velero/velero-plugin-for-aws:v1.8.0
+        volumeMounts:
+          - mountPath: /target
+            name: plugins
+    schedules:
+      daily:
+        schedule: "0 2 * * *"
+        template:
+          includedNamespaces:
+            - prod
+            - dev
+          ttl: 168h

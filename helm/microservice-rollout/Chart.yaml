@@ -1,0 +1,6 @@
+apiVersion: v2
+name: microservice-rollout
+description: Helm chart for microservices with Argo Rollouts
+type: application
+version: 1.0.0
+appVersion: "1.0"
